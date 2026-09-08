@@ -21,6 +21,4 @@ ajax-newsletter produces a newsletter that details what happens in Community Aff
 - Never commit PDFs, transcripts, captions, scraped source material, or credentials.
 - Fixtures are metadata only.
 
-## Context
-- Agendas and minutes are found on https://ajax-publicmeetings.powerappsportals.com/
-- YouTube recordings of live meetings along with transcripts are found here: https://www.youtube.com/@thetownofajax/streams
+
