@@ -16,6 +16,7 @@ ajax-newsletter produces a newsletter that details what happens in Community Aff
 - Do not write documents specifying systems that do not exist yet. ADRs record decisions
   already taken.
 - When a request is ambiguous, ask. Do not pick and proceed.
+- Standard library is preferred, but you may choose other libraries and packages when it makes sense.
 
 ## Out of bounds
 - Never commit PDFs, transcripts, captions, scraped source material, or credentials.

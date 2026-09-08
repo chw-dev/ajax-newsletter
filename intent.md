@@ -19,7 +19,7 @@ python meetings.py --start <start-date> --end <end-date>
 ## Output
 JSON formatted, with the date of the meeting, the type of meeting, the meeting status (Completed / Cancelled / Scheduled), and one link per document for that meeting. All in-scope meetings in the range are returned regardless of status; the caller decides whether a status counts as "occurred".
 ## Constraints
-- Standard library only. If you think you need a package, stop and say which and why.
+- Standard library is preferred, but you may choose other libraries and packages when it makes sense.
 - You're an unannounced client of a small town's portal. One request at a time, no parallel fetching, roughly a second between requests, and a User-Agent that says what this is rather than pretending to be Chrome.
 - One file. No package layout, no config system, no CLI framework, no logging setup.
 - Print to stdout. Don't write files, create directories, or cache to disk.
