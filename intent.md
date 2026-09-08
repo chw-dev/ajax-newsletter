@@ -18,6 +18,8 @@ Agendas & minutes: https://ajax-publicmeetings.powerappsportals.com/
 python meetings.py --start <start-date> --end <end-date>
 ## Output
 JSON formatted, with the date of the meeting, the type of meeting, the meeting status (Completed / Cancelled / Scheduled), and one link per document for that meeting. All in-scope meetings in the range are returned regardless of status; the caller decides whether a status counts as "occurred".
+
+"Documents" means agendas and minutes only. The portal also carries a recording link (`crf6e_meetinglink`, YouTube) for many meetings; it is deliberately not emitted.
 ## Constraints
 - Standard library is preferred, but you may choose other libraries and packages when it makes sense.
   - 2026-09-08: added `tzdata` (requirements.txt). `zoneinfo` is stdlib but needs an IANA time-zone database, which Windows does not ship. Used to convert meeting timestamps to America/Toronto local before taking the date.
