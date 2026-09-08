@@ -4,7 +4,7 @@
 ajax-newsletter produces a newsletter that details what happens in Community Affairs and Planning meetings, Ajax Council Meetings and General Government Committee meetings, both special and regular. Ajax residents will read this newsletter because it offers an easy-to-understand, quick-to-read, neutral-but-lively summation of these meetings and the important information and decisions impacting them. The cadence is weekly, when these meetings occur.
 
 ## Commands
-- Tests: <fill in when they exist>
+- Tests: python -m unittest
 - Run: <fill in when it exists>
 
 ## Working rules

@@ -5,10 +5,11 @@ Usage:
 
 Talks to the Town of Ajax public meetings portal (a Power Apps portal). The
 meeting list is rendered by a JS grid, not present in the raw page HTML, so
-this replays the same request sequence the browser makes: fetch an anonymous
-session + CSRF token, fetch the grid's view configuration, then POST for the
-full record set and filter client-side (the API has no server-side date
-filter).
+this makes the same request sequence the browser makes: fetch the anonymous
+session cookie and CSRF token the portal issues to every visitor, fetch the
+grid's view configuration, then POST for the full record set and filter
+client-side (the API has no server-side date filter). No account, login, or
+user-specific secret is involved; see the note in intent.md's Constraints.
 """
 
 import argparse
@@ -144,6 +145,7 @@ def build_meeting_entry(fields, meeting_date):
     return {
         "date": meeting_date.isoformat(),
         "meeting_type": fields["crf6e_name"],
+        "status": fields.get("crf6e_meetingstatus"),
         "documents": documents,
     }
 
@@ -158,6 +160,9 @@ def filter_meetings(records, start_date, end_date):
             continue
         if meeting_type not in IN_SCOPE_MEETING_TYPES:
             continue
+        # crf6e_meetingstatus (Completed / Cancelled / Scheduled) is surfaced in
+        # each entry, not filtered on: the caller decides whether a given status
+        # counts as "occurred" for publish purposes.
         meeting_date = parse_wire_date(wire_date)
         if not (start_date <= meeting_date <= end_date):
             continue
