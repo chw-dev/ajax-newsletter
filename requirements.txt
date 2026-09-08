@@ -1,0 +1,2 @@
+# zoneinfo needs an IANA time-zone database; Windows ships none.
+tzdata

@@ -13,6 +13,7 @@ user-specific secret is involved; see the note in intent.md's Constraints.
 """
 
 import argparse
+import collections
 import datetime
 import http.cookiejar
 import json
@@ -22,11 +23,28 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 BASE_URL = "https://ajax-publicmeetings.powerappsportals.com"
 LIST_VIEW_NAME = "City Connections Meetings Lookup View"
 USER_AGENT = "ajax-newsletter-meetings-fetcher/1.0 (non-commercial community newsletter tool)"
 REQUEST_DELAY_SECONDS = 1
+PAGE_SIZE = 5000
+
+MEETING_TZ_NAME = "America/Toronto"
+try:
+    MEETING_TZ = ZoneInfo(MEETING_TZ_NAME)
+except ZoneInfoNotFoundError:
+    raise SystemExit(
+        f"error: time-zone data for {MEETING_TZ_NAME!r} is unavailable. "
+        "Run: pip install -r requirements.txt"
+    )
+
+# Meeting-type names that should map into IN_SCOPE_MEETING_TYPES. Used only to
+# decide whether an unmatched name is worth warning about: a renamed in-scope
+# meeting ("Special General Government Committee") gets flagged, an out-of-scope
+# body ("Committee of Adjustment") stays quiet.
+IN_SCOPE_HINTS = ("council", "government committee", "ggc", "affairs and planning")
 
 # The "special" General Government Committee meeting is abbreviated "Special
 # GGC" rather than following the "Special <name>" pattern the other two
@@ -43,21 +61,20 @@ IN_SCOPE_MEETING_TYPES = {
 
 WIRE_DATE_RE = re.compile(r"/Date\((\d+)\)/")
 
-# The portal bakes a fixed timezoneOffset of 240 (EDT, UTC-4) into the
-# request; the server uses it to produce the returned epoch timestamp. During
-# EST (winter) this is off by one hour from true local time. Ajax meetings in
-# this dataset run in the afternoon/evening, so an hour's shift can't cross a
-# date boundary in practice.
-FIXED_UTC_OFFSET = datetime.timedelta(hours=4)
-
 
 def parse_wire_date(value):
+    # The wire value is a plain UTC instant; the request's timezoneOffset field
+    # is inert (posting 240, 0 or -480 returns identical epochs). Some records
+    # carry a real afternoon meeting time, others are date-only stored at local
+    # midnight. Converting to America/Toronto local before taking .date() is
+    # correct for both, and the exact offset only matters for values landing in
+    # the 04:00-05:00 UTC window, where EST vs EDT changes the calendar day.
     match = WIRE_DATE_RE.search(value)
     if not match:
         raise ValueError(f"unrecognized date format: {value!r}")
     epoch_ms = int(match.group(1))
     utc_dt = datetime.datetime.fromtimestamp(epoch_ms / 1000, tz=datetime.timezone.utc)
-    return (utc_dt - FIXED_UTC_OFFSET).date()
+    return utc_dt.astimezone(MEETING_TZ).date()
 
 
 def build_opener():
@@ -100,7 +117,7 @@ def fetch_records(opener, view_config, csrf_token):
             "sortExpression": layout.get("SortExpression") or "crf6e_meetingdate DESC",
             "search": "",
             "page": 1,
-            "pageSize": 5000,
+            "pageSize": PAGE_SIZE,
             "filter": None,
             "metaFilter": "",
             "timezoneOffset": 240,
@@ -117,6 +134,14 @@ def fetch_records(opener, view_config, csrf_token):
     url = BASE_URL + view_config["getDataUrl"]
     body = request(opener, url, data=payload, extra_headers=headers).decode("utf-8")
     data = json.loads(body)
+    if data.get("MoreRecords"):
+        # Sort is crf6e_meetingdate DESC, so a truncated set silently drops the
+        # oldest meetings. Fail loudly instead; add real pagination if the table
+        # ever approaches PAGE_SIZE rows (582 as of 2026-09).
+        raise RuntimeError(
+            f"portal returned a truncated result set (pageSize={PAGE_SIZE}, "
+            "MoreRecords=true); pagination is not implemented"
+        )
     return data["Records"]
 
 
@@ -151,14 +176,21 @@ def build_meeting_entry(fields, meeting_date):
 
 
 def filter_meetings(records, start_date, end_date):
+    """Return (meetings, notes): entries in range, plus human-readable strings
+    about records that were dropped in a way that could hide a real meeting."""
     meetings = []
+    missing_fields = 0
+    unmatched_in_scope = collections.Counter()
     for record in records:
         fields = flatten_attributes(record)
         meeting_type = fields.get("crf6e_name")
         wire_date = fields.get("crf6e_meetingdate")
         if not meeting_type or not wire_date:
+            missing_fields += 1
             continue
         if meeting_type not in IN_SCOPE_MEETING_TYPES:
+            if any(hint in meeting_type.lower() for hint in IN_SCOPE_HINTS):
+                unmatched_in_scope[meeting_type] += 1
             continue
         # crf6e_meetingstatus (Completed / Cancelled / Scheduled) is surfaced in
         # each entry, not filtered on: the caller decides whether a given status
@@ -168,7 +200,19 @@ def filter_meetings(records, start_date, end_date):
             continue
         meetings.append(build_meeting_entry(fields, meeting_date))
     meetings.sort(key=lambda m: m["date"])
-    return meetings
+
+    notes = []
+    if missing_fields:
+        notes.append(f"{missing_fields} record(s) skipped: missing name or date")
+    if unmatched_in_scope:
+        listed = ", ".join(
+            f"{name!r} ({count})" for name, count in sorted(unmatched_in_scope.items())
+        )
+        notes.append(
+            f"{sum(unmatched_in_scope.values())} record(s) skipped: name resembles an "
+            f"in-scope meeting but is not in IN_SCOPE_MEETING_TYPES: {listed}"
+        )
+    return meetings, notes
 
 
 def parse_args(argv):
@@ -191,10 +235,21 @@ def main(argv):
     opener = build_opener()
     try:
         records = collect_meetings(opener)
-    except (urllib.error.URLError, RuntimeError, KeyError, json.JSONDecodeError) as exc:
+        meetings, notes = filter_meetings(records, start_date, end_date)
+    except (
+        urllib.error.URLError,
+        TimeoutError,
+        RuntimeError,
+        KeyError,
+        IndexError,
+        ValueError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as exc:
         print(f"error: failed to fetch meetings: {exc}", file=sys.stderr)
         return 1
-    meetings = filter_meetings(records, start_date, end_date)
+    for note in notes:
+        print(f"note: {note}", file=sys.stderr)
     print(json.dumps(meetings, indent=2))
     return 0
 
